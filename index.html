@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streak Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .settings-icon {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 500px;
+        }
+
+        .setting-item {
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .danger-button {
+            background-color: #dc3545;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        body.dark-mode {
+            background-color: #121212;
+            color: white;
+        }
+
+        .dark-mode .modal-content {
+            background-color: #1e1e1e;
+            color: white;
+        }
+
+        .cooldown-timer {
+            margin-top: 10px;
+            color: #dc3545;
+            font-size: 1.2em;
+            height: 20px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .cooldown-timer.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Streak Tracker</h1>
+            <img id="settings-button" class="settings-icon" src="settings.png" alt="Settings">
+        </div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+            <div class="milestones" id="milestones"></div>
+        </div>
+        <button id="streak-button">Press me!</button>
+        <div id="cooldown-timer" class="cooldown-timer"></div>
+        <p id="streak-count">Streak: 0 days</p>
+        <div id="popup-message" class="popup-message"></div>
+    </div>
+
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <div class="setting-item">
+                <label>Dark Mode</label>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <button id="reset-progress" class="danger-button">Reset Progress</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="streak.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const button = document.getElementById('streak-button');
+            const streakCountElement = document.getElementById('streak-count');
+            const progressBar = document.getElementById('progress-bar');
+            const cooldownTimer = document.getElementById('cooldown-timer');
+            
+            const messages = [
+                "Great job! Keep going!",
+                "You're doing amazing!",
+                "Keep up the good work!", 
+                "Fantastic! Don't stop now!",
+                "You're on fire!",
+                "You're a champion!",
+                "You're a winner!",
+                "You're a rockstar!",
+                "You're a legend!",
+                "You're a hero!",
+                "You're a warrior!"
+            ];
+        
+            let streak = parseInt(localStorage.getItem('streak')) || 0;
+            let lastPressDate = localStorage.getItem('lastPressDate');
+            const today = new Date().toDateString();
+        
+            // Initialize streak if needed
+            if (!lastPressDate) {
+                lastPressDate = today;
+                localStorage.setItem('lastPressDate', lastPressDate);
+            }
+        
+            // Check if we should reset streak (missed a day)
+            if (lastPressDate !== today) {
+                const lastDate = new Date(lastPressDate);
+                const currentDate = new Date(today);
+                const diffTime = Math.abs(currentDate - lastDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays > 1) {
+                    streak = 0;
+                    localStorage.setItem('streak', streak);
+                }
+            }
+        
+            // Update UI
+            updateUI();
+            updateCooldownTimer();
+        
+            // Button click handler
+            button.addEventListener('click', async () => {
+                if (button.disabled) return;
+                
+                streak++;
+                localStorage.setItem('streak', streak);
+                localStorage.setItem('lastPressTime', Date.now().toString());
+                updateUI();
+                showMotivationalMessage();
+                animateButton();
+                updateCooldownTimer();
+                await sendDiscordNotification(`🎯 Current streak: ${streak} days`);
+            });
+
+            // Add to existing DOMContentLoaded event listener
+            const settingsButton = document.getElementById('settings-button');
+            const modal = document.getElementById('settings-modal');
+            const darkModeToggle = document.getElementById('dark-mode-toggle');
+            const resetProgress = document.getElementById('reset-progress');
+
+            // Load dark mode preference
+            const isDarkMode = localStorage.getItem('darkMode') === 'true';
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+                darkModeToggle.checked = true;
+            }
+
+            settingsButton.addEventListener('click', () => {
+                modal.style.display = 'block';
+            });
+
+            window.addEventListener('click', (event) => {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+
+            darkModeToggle.addEventListener('change', () => {
+                document.body.classList.toggle('dark-mode');
+                localStorage.setItem('darkMode', darkModeToggle.checked);
+            });
+
+            resetProgress.addEventListener('click', () => {
+                if (confirm('Are you sure you want to reset your progress? This cannot be undone.')) {
+                    localStorage.removeItem('streak');
+                    localStorage.removeItem('lastPressDate');
+                    streak = 0;
+                    updateUI();
+                    modal.style.display = 'none';
+                }
+            });
+        
+            function updateUI() {
+                streakCountElement.textContent = `Streak: ${streak} days`;
+                updateBackgroundColor(streak);
+                updateProgressBar(streak);
+            }
+        
+            function showMotivationalMessage() {
+                const message = messages[Math.floor(Math.random() * messages.length)];
+                alert(message);
+            }
+        
+            function animateButton() {
+                button.classList.add('animate');
+                setTimeout(() => button.classList.remove('animate'), 500);
+            }
+        
+            function updateBackgroundColor(streak) {
+                const brightness = Math.min(100, streak * 10);
+                document.body.style.backgroundColor = `hsl(200, 100%, ${brightness}%)`;
+            }
+        
+            function updateProgressBar(streak) {
+                const maxStreak = 90; // Adjust based on your milestone system
+                const progress = (streak / maxStreak) * 100;
+                progressBar.style.width = `${Math.min(100, progress)}%`;
+            }
+
+            function updateCooldownTimer() {
+                const lastPress = localStorage.getItem('lastPressTime');
+                if (!lastPress) return;
+        
+                const now = Date.now();
+                const timeSincePress = now - parseInt(lastPress);
+                const cooldownTime = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        
+                if (timeSincePress < cooldownTime) {
+                    const timeLeft = cooldownTime - timeSincePress;
+                    const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
+                    const minutesLeft = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+                    
+                    cooldownTimer.textContent = `Next press available in: ${hoursLeft}h ${minutesLeft}m`;
+                    cooldownTimer.classList.add('show');
+                    button.disabled = true;
+                } else {
+                    cooldownTimer.classList.remove('show');
+                    button.disabled = false;
+                }
+            }
+        
+            // Update timer every minute
+            setInterval(updateCooldownTimer, 60000);
+        });
+    </script>
+</body>
+</html>
